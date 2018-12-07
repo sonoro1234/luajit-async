@@ -18,12 +18,14 @@ To create a callback ctype, call the function with the string ctype: `local MyCa
 Now that you've created the ctype, you can now create a callback.
 
 ```lua
-local MyCallback = MyCallback_t(function()
+function initcallback(...)
 	-- can init things here
+	print("init args are", ...)
 	return function(n) 
 		print(n) 
 	end 
-end)
+end
+local MyCallback = MyCallback_t(initcallback,"some string",33)
 local MyCallback_funcptr = MyCallback:funcptr() -- Get the actual callback
 MyCallback_funcptr(123) -- Prints 123
 MyCallback:free() -- Destroy the callback and the Lua state.
@@ -71,7 +73,7 @@ lj-async also provides threads, built on top of the callback objects. The module
 
 The API is:
 
-* `Thread.new(func, ud)` or `Thread(func, ud)`: Creates and starts a new thread. `func` is an async-callback compatible function or source/bytecode that takes a userdata pointer and returns 0. `ud` is the userdata to pass to the function.
+* `Thread.new(func, ud, ...)` or `Thread(func, ud, ...)`: Creates and starts a new thread. `func` is an async-callback compatible function or source/bytecode that takes a userdata pointer and returns 0. `ud` is the userdata to pass to the function and ... can be any init args.
 * `thread:join([timeout])`: Joins with a thread. `timeout` is the time, in seconds, to block. `0` means don't block, while `nil` means block forever. Returns `true` if the thread terminated, or `false` if the timeout was exceeded.
 * `thread:destroy()`: Destroys the thread and callback. Don't call this until after you join!
 

@@ -81,9 +81,9 @@ if ffi.os == "Windows" then
 	-- func is a function or source/bytecode (see callback.lua for info and limitations)
 	-- It takes a void* userdata as a parameter and should always return 0.
 	-- ud is the userdata to pass into the thread.
-	function Thread.new(func, ud)
+	function Thread.new(func, ud, ...)
 		local self = setmetatable({}, Thread)
-		local cb = callback_t(func)
+		local cb = callback_t(func, ...)
 		self.cb = cb
 		
 		local t = C.CreateThread(nil, 0, cb:funcptr(), ud, 0, nil)

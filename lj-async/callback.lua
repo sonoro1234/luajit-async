@@ -5,7 +5,7 @@ local ffi = require "ffi"
 local C = ffi.C
 
 -- Setup function ran by the Lua state to create
-local callback_setup_func = string.dump(function(cbtype, cbsource. ...)
+local callback_setup_func = string.dump(function(cbtype, cbsource, ...)
     local ffi = _G.require("ffi")
     local initfunc = _G.loadstring(cbsource)
     
@@ -73,6 +73,13 @@ local moveValues_typeconverters = {
     ["nil"]     = function(L,v) C.lua_pushnil(L) end,
     ["boolean"] = function(L,v) C.lua_pushboolean(L,v) end,
     ["cdata"]   = function(L,v) C.lua_pushlightuserdata(L,v) end,
+    ["function"]   = function(L,v)
+        local stfunc = string.dump(v)
+        --C.lua_pushlstring(L,stfunc,#stfunc)
+        C.lua_getfield(L, C.LUA_GLOBALSINDEX, "loadstring")
+        C.lua_pushlstring(L, stfunc, #stfunc)
+        C.lua_call(L,1,1)
+    end,
 }
 
 -- Copies values into a lua state

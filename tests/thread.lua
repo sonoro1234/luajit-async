@@ -2,21 +2,24 @@
 local Thread = require "lj-async.thread"
 local ffi = require "ffi"
 
-local thread_func = string.dump(function(ud)
-	local ffi = require "ffi"
-	ud = ffi.cast("struct { int x; }*", ud)
-	print(ud.x)
-	return 0
+local thread_func = string.dump(function(...)
+	print("init args",...)
+	return function(ud)
+		local ffi = require "ffi"
+		ud = ffi.cast("struct { int x; }*", ud)
+		print(ud.x)
+		return 0
+	end
 end)
 
 local thread_data_t = ffi.typeof("struct { int x; }")
 
 print("Creating thread 1")
-local thread1 = Thread(thread_func, thread_data_t(123))
+local thread1 = Thread(thread_func, thread_data_t(123),1,"uno")
 print("Creating thread 2")
-local thread2 = Thread(thread_func, thread_data_t(456))
+local thread2 = Thread(thread_func, thread_data_t(456),"dos",2)
 print("Creating thread 3")
-local thread3 = Thread(thread_func, thread_data_t(789))
+local thread3 = Thread(thread_func, thread_data_t(789),33)
 
 print("Joining thread 1")
 thread1:join()

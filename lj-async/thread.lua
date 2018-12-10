@@ -19,8 +19,6 @@ setmetatable(Thread, {__call=function(self,...) return self.new(...) end})
 if ffi.os == "Windows" then
 	ffi.cdef[[
 		static const int STILL_ACTIVE = 259;
-		static const int FORMAT_MESSAGE_FROM_SYSTEM = 0x00001000;
-		static const int FORMAT_MESSAGE_IGNORE_INSERTS = 0x00000200;
 		static const int WAIT_ABANDONED = 0x00000080;
 		static const int WAIT_OBJECT_0 = 0x00000000;
 		static const int WAIT_TIMEOUT = 0x00000102;
@@ -61,9 +59,11 @@ if ffi.os == "Windows" then
 	
 	local function error_win(lvl)
 		local errcode = C.GetLastError()
-		local str = str_b(1024)
-		local numout = C.FormatMessageA(bit.bor(C.FORMAT_MESSAGE_FROM_SYSTEM,
-			C.FORMAT_MESSAGE_IGNORE_INSERTS), nil, errcode, 0, str, 1023, nil)
+		local str = ffi.new("char[?]",1024)
+		local FORMAT_MESSAGE_FROM_SYSTEM = 0x00001000
+		local FORMAT_MESSAGE_IGNORE_INSERTS = 0x00000200
+		local numout = C.FormatMessageA(bit.bor(FORMAT_MESSAGE_FROM_SYSTEM,
+			FORMAT_MESSAGE_IGNORE_INSERTS), nil, errcode, 0, str, 1023, nil)
 		if numout == 0 then
 			error("Windows Error: (Error calling FormatMessage)", lvl)
 		else
@@ -81,9 +81,9 @@ if ffi.os == "Windows" then
 	-- func is a function or source/bytecode (see callback.lua for info and limitations)
 	-- It takes a void* userdata as a parameter and should always return 0.
 	-- ud is the userdata to pass into the thread.
-	function Thread.new(func, ud)
+	function Thread.new(func, ud, ...)
 		local self = setmetatable({}, Thread)
-		local cb = callback_t(func)
+		local cb = callback_t(func, ...)
 		self.cb = cb
 		
 		local t = C.CreateThread(nil, 0, cb:funcptr(), ud, 0, nil)

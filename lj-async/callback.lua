@@ -138,7 +138,7 @@ function Callback:__new(callback_func,...)
     C.luaL_openlibs(L)
     C.lua_settop(L,0)
     
-    if C.lua_checkstack(L, 3) == 0 then
+    if C.lua_checkstack(L, 20) == 0 then
         error("out of memory")
     end
     
@@ -169,6 +169,47 @@ function Callback:__new(callback_func,...)
     return obj
 end
 
+---for getting another callback from the same Lua state
+function Callback:additional_cb(cb2,cb2type,...)
+    if type(cb2) == "function" then
+        local name,val = debug.getupvalue(cb2,1)
+        if name then
+            print("init callback function has upvalue ",name)
+            error("upvalues in init callback")
+        end
+        cb2 = string.dump(cb2)
+    end
+    local L = self.L
+    
+    C.lua_settop(L,0)
+    
+    if C.lua_checkstack(L, 20) == 0 then
+        error("out of memory")
+    end
+    -- Load the callback setup function
+    C.lua_getfield(L, C.LUA_GLOBALSINDEX, "loadstring")
+    C.lua_pushlstring(L, callback_setup_func, #callback_setup_func)
+    C.lua_call(L,1,1)
+    -- Load the actual callback
+    C.lua_pushlstring(L, cb2type, #cb2type)
+    C.lua_pushlstring(L, cb2, #cb2)
+    local n = moveValues(L, ...)
+    local ret = C.lua_pcall(L,2+n,2,0)
+    if ret > 0 then
+        print(ffi.string(C.lua_tolstring(L,1,nil)))
+        error("error making additional callback",2)
+        return nil
+    end
+     -- Get and pop the callback function pointer
+    assert(C.lua_isnumber(L,2) ~= 0)
+    local ptr = C.lua_tointeger(L,2)
+    assert(ptr ~= 0)
+    C.lua_settop(L, 1)
+    local callback = ffi.cast(cb2type, ptr)
+    assert(callback ~= nil)
+    
+    return callback
+end
 --- Gets and returns the callback function pointer.
 function Callback:funcptr()
     return self.callback

@@ -1,0 +1,3 @@
+[submodule "pthread"]
+	path = pthread
+	url = https://github.com/luapower/pthread.git

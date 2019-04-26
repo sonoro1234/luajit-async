@@ -30,8 +30,8 @@ local callback_setup_func = string.dump(function(cbtype, cbsource, ...)
             return 0
         end
     end)
-    
-    return cb, tonumber(ffi.cast("int", cb))
+    local ptr = tonumber(ffi.cast('uintptr_t', ffi.cast('void *', cb)))
+    return cb, ptr
 end)
 
 ffi.cdef[[

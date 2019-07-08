@@ -80,4 +80,7 @@ The API is:
 Synchronization
 ---------------
 
-Not yet implemented.
+local Mutex = require "lj-async.mutex"
+local mut = Mutex()
+mut:lock()
+mut:unlock()

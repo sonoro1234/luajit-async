@@ -18,12 +18,12 @@ setmetatable(Thread, {__call=function(self,...) return self.new(...) end})
 
 if ffi.os == "Windows" then
 	ffi.cdef[[
-		static const int STILL_ACTIVE = 259;
-		static const int WAIT_ABANDONED = 0x00000080;
-		static const int WAIT_OBJECT_0 = 0x00000000;
-		static const int WAIT_TIMEOUT = 0x00000102;
-		static const int WAIT_FAILED = 0xFFFFFFFF;
-		static const int INFINITE = 0xFFFFFFFF;
+		//static const int STILL_ACTIVE = 259;
+		static const int WAIT_ABANDONED_TH = 0x00000080;
+		static const int WAIT_OBJECT_0_TH = 0x00000000;
+		static const int WAIT_TIMEOUT_TH = 0x00000102;
+		//static const int WAIT_FAILED = 0xFFFFFFFF;
+		static const int INFINITE_TH = 0xFFFFFFFF;
 		
 		int CloseHandle(void*);
 		int GetExitCodeThread(void*,unsigned long*);
@@ -103,15 +103,18 @@ if ffi.os == "Windows" then
 		if timeout then
 			timeout = timeout*1000
 		else
-			timeout = C.INFINITE
+			timeout = C.INFINITE_TH
 		end
 		
 		local r = C.WaitForSingleObject(self.thread, timeout)
-		if r == C.WAIT_OBJECT_0 or r == C.WAIT_ABANDONED then
+		if r == C.WAIT_OBJECT_0_TH or r == C.WAIT_ABANDONED_TH then
+
 			return true
-		elseif r == C.WAIT_TIMEOUT then
+		elseif r == C.WAIT_TIMEOUT_TH then
+
 			return false
 		else
+
 			error_win(2)
 		end
 	end
@@ -121,16 +124,34 @@ if ffi.os == "Windows" then
 	function Thread:free()
 		if self.thread ~= nil then
 			error_check(C.CloseHandle(self.thread))
-			self.thread = nil
+			--self.thread = nil
 		end
 		
 		if self.cb ~= nil then
 			self.cb:free()
-			self.cb = nil
+			--self.cb = nil
 		end
 	end
 else
-	error("Unsupported OS: "..ffi.os, 2)
+	local pthread = require"pthread"
+	callback_t = CallbackFactory("void *(*)(void *)")
+	
+	function Thread.new(func, ud, ...)
+		local self = setmetatable({}, Thread)
+		local cb = callback_t(func, ...)
+		self.cb = cb
+		local t = pthread.new(cb:funcptr(),nil,ud)
+		self.thread = t
+		return self
+	end
+	function Thread:join(timeout)
+		if self.thread == nil then error("invalid thread",3) end
+		return pthread.join(self.thread)
+	end
+	function Thread:free()
+		--if self.thread ~= nil then
+		--end
+	end
 end
 
 return Thread

@@ -157,7 +157,6 @@ end
 
 --- Destroys the mutex.
 function Mutex:destroy()
-	print"Mutex:destroy"
 	if self.mutex then
 		abstraction.mutex_destroy(self.mutex)
 		--self.mutex = nil

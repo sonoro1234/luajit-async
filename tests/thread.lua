@@ -2,15 +2,15 @@
 local Thread = require "lj-async.thread"
 local ffi = require "ffi"
 
-local thread_func = string.dump(function(...)
+local thread_func = function(...)
 	print("init args",...)
 	return function(ud)
 		local ffi = require "ffi"
 		ud = ffi.cast("struct { int x; }*", ud)
 		print(ud.x)
-		return 0
+		if ffi.os == "Windows" then return 0 end
 	end
-end)
+end
 
 local thread_data_t = ffi.typeof("struct { int x; }")
 

@@ -9,7 +9,7 @@ local thread_func = function(f,...)
 		ud = ffi.cast("struct { int x; }*", ud)
 		print("ud.x is:",ud.x)
 		f(unpack(args))
-		--return 0
+		if ffi.os == "Windows" then return 0 end
 	end
 end
 

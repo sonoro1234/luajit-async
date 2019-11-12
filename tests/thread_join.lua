@@ -10,7 +10,7 @@ return function(ud)
 		ffi.cdef[[unsigned int sleep(unsigned int);]]
 		ffi.C.sleep(5)
 	end
-	return 0
+	if ffi.os == "Windows" then return 0 end
 end
 end
 

@@ -7,7 +7,7 @@ return function()
 		assert(not m:lock(1), "Thread locked the mutex, somehow.")
 		print("Timed out, i=",i)
 	end
-	return 0
+	if ffi.os == "Windows" then return 0 end
 end
 end
 

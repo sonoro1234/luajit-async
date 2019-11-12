@@ -28,7 +28,7 @@ return function(threadid)
 		print("Thread "..tostring(threadid.x).." got mutex, i="..i)
 		m:unlock()
 	end
-	return 0
+	if ffi.os == "Windows" then return 0 end
 end
 end
 

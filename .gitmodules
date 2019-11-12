@@ -1,3 +1,4 @@
 [submodule "pthread"]
 	path = pthread
 	url = https://github.com/sonoro1234/pthread.git
+	branch = userdata

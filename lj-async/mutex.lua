@@ -160,7 +160,7 @@ function Mutex:destroy()
 	print"Mutex:destroy"
 	if self.mutex then
 		abstraction.mutex_destroy(self.mutex)
-		self.mutex = nil
+		--self.mutex = nil
 	end
 end
 Mutex.__gc = Mutex.destroy

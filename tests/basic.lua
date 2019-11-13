@@ -1,3 +1,4 @@
+--WINUSEPTHREAD=true
 local ffi = require "ffi"
 local Thread = require "lj-async.thread"
 
@@ -9,7 +10,6 @@ local thread_func = function(f,...)
 		ud = ffi.cast("struct { int x; }*", ud)
 		print("ud.x is:",ud.x)
 		f(unpack(args))
-		if ffi.os == "Windows" then return 0 end
 	end
 end
 

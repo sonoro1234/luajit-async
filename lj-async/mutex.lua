@@ -4,7 +4,7 @@ local ffi = require "ffi"
 local C = ffi.C
 
 local abstraction = {}
-if ffi.os == "Windows" then
+if ffi.os == "Windows" and not WINUSEPTHREAD then
 	--abstractions = require "jitthreads._win"
 	--abstractions = require "jitthreads._pthreads"
 	ffi.cdef[[
@@ -120,8 +120,12 @@ else
 	end
 
 	function abstraction.mutex_get(mutex, timeout)
-		if timeout then error"not timeout in pthread mutex" end
-		mutex:lock()
+		if timeout then 
+			return mutex:timedlock(timeout)
+		else
+			mutex:lock()
+			return true
+		end
 	end
 
 	function abstraction.mutex_release(mutex)

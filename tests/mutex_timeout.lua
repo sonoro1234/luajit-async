@@ -1,16 +1,16 @@
 local ThreadF = function(m)
 	local ffi = require "ffi"
-	local Mutex = require "lj-async.Mutex"
+	--WINUSEPTHREAD = true
+	local Mutex = require "lj-async.mutex"
 	m = ffi.cast(ffi.typeof("$*",Mutex),m)
 return function()
 	for i=1,5 do
 		assert(not m:lock(1), "Thread locked the mutex, somehow.")
 		print("Timed out, i=",i)
 	end
-	if ffi.os == "Windows" then return 0 end
 end
 end
-
+--WINUSEPTHREAD = true
 local Thread = require "lj-async.thread"
 local Mutex = require "lj-async.mutex"
 

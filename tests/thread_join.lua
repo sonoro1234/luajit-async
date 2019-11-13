@@ -10,10 +10,11 @@ return function(ud)
 		ffi.cdef[[unsigned int sleep(unsigned int);]]
 		ffi.C.sleep(5)
 	end
-	if ffi.os == "Windows" then return 0 end
+	
 end
 end
 
+--WINUSEPTHREAD = true
 local Thread = require "lj-async.thread"
 local Mutex = require "lj-async.mutex"
 local ffi = require"ffi"

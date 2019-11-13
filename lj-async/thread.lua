@@ -16,7 +16,7 @@ local callback_t
 
 setmetatable(Thread, {__call=function(self,...) return self.new(...) end})
 
-if ffi.os == "Windows" then
+if ffi.os == "Windows" and not WINUSEPTHREAD then
 	ffi.cdef[[
 		//static const int STILL_ACTIVE = 259;
 		static const int WAIT_ABANDONED_TH = 0x00000080;

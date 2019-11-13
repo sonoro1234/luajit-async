@@ -8,7 +8,8 @@ local C = ffi.C
 local callback_setup_func = string.dump(function(cbtype, cbsource, ...)
     local ffi = _G.require("ffi")
     local initfunc = _G.loadstring(cbsource)
-    
+    local ret_fail2 = cbtype:match("(.-)%(.-%*.-%)")
+    ret_fail2 = ffi.new(ret_fail2)
     local xpcall, dtraceback, tostring, error = _G.xpcall, _G.debug.traceback, _G.tostring, _G.error
     
     local xpcall_hook = function(err) return dtraceback(tostring(err) or "<nonstring error>") end
@@ -20,14 +21,13 @@ local callback_setup_func = string.dump(function(cbtype, cbsource, ...)
         local ok, val = xpcall(cbfunc, xpcall_hook, ...)
         if not ok then
             print("error in callback",val)
-            --error(val, 0)
             waserror = true
-            return 0
+            return ret_fail2
         else
-            return val
+            return val or ret_fail2
         end
         else
-            return 0
+            return ret_fail2
         end
     end)
     local ptr = tonumber(ffi.cast('uintptr_t', ffi.cast('void *', cb)))

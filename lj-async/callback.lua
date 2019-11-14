@@ -8,8 +8,8 @@ local C = ffi.C
 local callback_setup_func = string.dump(function(cbtype, cbsource, ...)
     local ffi = _G.require("ffi")
     local initfunc = _G.loadstring(cbsource)
-    local ret_fail2 = cbtype:match("(.-)%(.-%*.-%)")
-    ret_fail2 = ffi.new(ret_fail2)
+    local ret_fail2 = cbtype:match("%s*(.-)%s*%(.-%*.-%)")
+    ret_fail2 = (ret_fail2 ~= "void") and ffi.new(ret_fail2) or nil
     local xpcall, dtraceback, tostring, error = _G.xpcall, _G.debug.traceback, _G.tostring, _G.error
     
     local xpcall_hook = function(err) return dtraceback(tostring(err) or "<nonstring error>") end

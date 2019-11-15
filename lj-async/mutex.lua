@@ -118,10 +118,36 @@ else
 		end
 		mutex:free()
 	end
-
+	
+	ffi.cdef[[
+	typedef int clockid_t;
+	int clock_gettime(clockid_t clk_id, timespec *tp);
+	int pthread_mutex_timedlock(pthread_mutex_t *m,const timespec *abs_timeout); 
+	]]
+	local tsl
+	local ETIMEDOUT = (ffi.os=="Linux" and 110) or (ffi.os=="Windows" and 138) or 60
+	function pthread_mutex_timedlock(mutex,timeout)
+		tsl = tsl or ffi.new'timespec'
+		pthreads.C.clock_gettime(0,tsl) -- CLOCK_REALTIME
+		local int, frac = math.modf(timeout)
+		tsl.s = tsl.s + int
+		tsl.ns = tsl.ns + frac * 1e9
+		while (tsl.ns >= 1e9) do
+			tsl.ns = tsl.ns - 1e9;
+			tsl.s = tsl.s + 1
+		end
+		local ret = pthreads.C.pthread_mutex_timedlock(mutex,tsl)
+		if ret == 0 then
+			return true
+		elseif ret == ETIMEDOUT then
+			return false
+		else
+			error("error on pthread_mutex_timedlock:"..ret)
+		end
+	end
 	function abstraction.mutex_get(mutex, timeout)
 		if timeout then 
-			return mutex:timedlock(timeout)
+			return pthread_mutex_timedlock(mutex,timeout) --mutex:timedlock(timeout)
 		else
 			mutex:lock()
 			return true

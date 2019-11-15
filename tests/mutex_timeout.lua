@@ -1,6 +1,6 @@
 local ThreadF = function(m)
 	local ffi = require "ffi"
-	--WINUSEPTHREAD = true
+	WINUSEPTHREAD = true
 	local Mutex = require "lj-async.mutex"
 	m = ffi.cast(ffi.typeof("$*",Mutex),m)
 return function()
@@ -10,7 +10,7 @@ return function()
 	end
 end
 end
---WINUSEPTHREAD = true
+WINUSEPTHREAD = true
 local Thread = require "lj-async.thread"
 local Mutex = require "lj-async.mutex"
 

@@ -14,7 +14,9 @@ local callback_setup_func = string.dump(function(cbtype, cbsource, ...)
     
     local xpcall_hook = function(err) return dtraceback(tostring(err) or "<nonstring error>") end
 
-    local cbfunc = initfunc(...)
+    --local cbfunc = initfunc(...)
+	local ok, cbfunc = xpcall(initfunc, xpcall_hook, ...)
+	if not ok then print("initfunc error", cbfunc);error("initfunc") end
     local waserror = false
     local cb = ffi.cast(cbtype, function(...)
         if not waserror then
@@ -47,6 +49,7 @@ ffi.cdef[[
     int lua_pcall (lua_State *L, int nargs, int nresults, int errfunc);
     void lua_checkstack (lua_State *L, int sz);
     void lua_settop (lua_State *L, int index);
+	int lua_gettop (lua_State *L);
     void  lua_pushlstring (lua_State *L, const char *s, size_t l);
     void lua_gettable (lua_State *L, int idx);
     void lua_getfield (lua_State *L, int idx, const char *k);
@@ -59,6 +62,7 @@ ffi.cdef[[
     void lua_pushnil (lua_State *L);
     void lua_pushboolean (lua_State *L, int b);
     void lua_pushlightuserdata (lua_State *L, void *p);
+	void lua_createtable (lua_State *L, int narr, int nrec);
 ]]
 
 -- Maps callback object ctypes to the callback pointer types
@@ -67,20 +71,69 @@ local ctype2cbstr = {}
 local Callback = {}
 Callback.__index = Callback
 
-local moveValues_typeconverters = {
-    ["number"]  = function(L,v) C.lua_pushnumber(L,v) end,
-    ["string"]  = function(L,v) C.lua_pushlstring(L,v,#v) end,
-    ["nil"]     = function(L,v) C.lua_pushnil(L) end,
-    ["boolean"] = function(L,v) C.lua_pushboolean(L,v) end,
-    ["cdata"]   = function(L,v) C.lua_pushlightuserdata(L,v) end,
-    ["function"]   = function(L,v)
-        local stfunc = string.dump(v)
-        --C.lua_pushlstring(L,stfunc,#stfunc)
+local function push(L, v, setupvals)
+	local xpcall, dtraceback, tostring, error = _G.xpcall, _G.debug.traceback, _G.tostring, _G.error
+    local xpcall_hook = function(err) return dtraceback(tostring(err) or "<nonstring error>") end
+	--print("push", type(v), v)
+    if type(v) == 'nil' then
+		C.lua_pushnil(L)
+	elseif type(v) == 'boolean' then
+		C.lua_pushboolean(L,v)
+	elseif type(v) == 'number' then
+		C.lua_pushnumber(L, v)
+	elseif type(v) == 'string' then
+		C.lua_pushlstring(L,v,#v)
+	elseif type(v) == 'function' then
+		local stfunc = string.dump(v)
         C.lua_getfield(L, C.LUA_GLOBALSINDEX, "loadstring")
         C.lua_pushlstring(L, stfunc, #stfunc)
         C.lua_call(L,1,1)
-    end,
-}
+		if setupvals then
+		local i = 1
+		while true do
+			local uname, uv = debug.getupvalue(v, i)
+			if not uname then break end
+			--print("push upvalue",uname,uv)
+			--local ok,err = pcall(push, L, uv, setupvals)
+			local ok,err = xpcall(push, xpcall_hook, L, uv, setupvals)
+			if not ok then
+				local info = debug.getinfo(v)
+				print("error pushing upvalue", uname, "of function:", info.name,"defined in",info.source,info.linedefined); 
+				print(err)
+				error("pushing upvalue") 
+			end
+			C.lua_setupvalue(L, -2, i)
+			i = i + 1
+		end
+		end
+	elseif type(v) == 'table' then
+		--NOTE: doesn't check duplicate refs
+		--NOTE: doesn't check for cycles
+		--NOTE: stack-bound on table depth
+		assert(C.lua_checkstack(L, 3) ~= 0, 'stack overflow')
+		C.lua_createtable(L, 0, 0)
+		local top = C.lua_gettop(L)
+		for k,v in pairs(v) do
+			push(L, k, setupvals)
+			push(L, v, setupvals)
+			C.lua_settable(L, top)
+		end
+		assert(C.lua_gettop(L) == top)
+	elseif type(v) == 'userdata' then
+		--NOTE: there's no Lua API to get the size or lightness of a userdata,
+		--so we don't have enough info to duplicate a userdata automatically.
+		error('Not implemented push userdata', 2)
+	elseif type(v) == 'thread' then
+		--NOTE: there's no Lua API to get the 'lua_State*' of a coroutine.
+		error('Not implemented push thread', 2)
+	elseif type(v) == 'cdata' then
+		--NOTE: there's no Lua C API to push a cdata.
+		--cdata are not shareable anyway because ctypes are not shareable.
+		--error('Not implemented push cdata '..tostring(v), 2)
+		--we push it as a pointer
+		C.lua_pushlightuserdata(L,v)
+	end
+end
 
 -- Copies values into a lua state
 local function moveValues(L, ...)
@@ -89,16 +142,51 @@ local function moveValues(L, ...)
     if C.lua_checkstack(L, n) == 0 then
         error("out of memory")
     end
-    
+
     for i=1,n do
         local v = select(i, ...)
-        local conv = moveValues_typeconverters[type(v)]
-        if not conv then
-            error("Cannot pass argument "..i.." into thread: type "..type(v).." not supported")
-        end
-        conv(L, v)
+        push(L, v, true)
     end
     return n
+end
+
+local function MakeCallback(L, cb2type, cb2, ... )
+    if type(cb2) == "function" then
+        local name,val = debug.getupvalue(cb2,1)
+        if name then
+            print("init callback function has upvalue ",name)
+            error("upvalues in init callback")
+        end
+        cb2 = string.dump(cb2)
+    end
+    C.lua_settop(L,0)
+    
+    if C.lua_checkstack(L, 20) == 0 then
+        error("out of memory")
+    end
+    -- Load the callback setup function
+    C.lua_getfield(L, C.LUA_GLOBALSINDEX, "loadstring")
+    C.lua_pushlstring(L, callback_setup_func, #callback_setup_func)
+    C.lua_call(L,1,1)
+    -- Load the actual callback
+    C.lua_pushlstring(L, cb2type, #cb2type)
+    C.lua_pushlstring(L, cb2, #cb2)
+    local n = moveValues(L, ...)
+    local ret = C.lua_pcall(L,2+n,2,0)
+    if ret > 0 then
+        print(ffi.string(C.lua_tolstring(L,1,nil)))
+        error("error making callback",2)
+        return nil
+    end
+     -- Get and pop the callback function pointer
+    assert(C.lua_isnumber(L,2) ~= 0)
+    local ptr = C.lua_tointeger(L,2)
+    assert(ptr ~= 0)
+    C.lua_settop(L, 1)
+    local callback = ffi.cast(cb2type, ptr)
+    assert(callback ~= nil)
+    
+    return callback
 end
 
 --- Creates a new callback object.
@@ -120,15 +208,6 @@ function Callback:__new(callback_func,...)
     local obj = ffi.new(self)
     local cbtype = assert(ctype2cbstr[tonumber(self)])
     
-    if type(callback_func) == "function" then
-        local name,val = debug.getupvalue(callback_func,1)
-        if name then
-            print("init callback function has upvalue ",name)
-            error("upvalues in init callback")
-        end
-        callback_func = string.dump(callback_func)
-    end
-    
     local L = C.luaL_newstate()
     if L == nil then
         error("Could not allocate new state",2)
@@ -136,79 +215,14 @@ function Callback:__new(callback_func,...)
     obj.L = L
     
     C.luaL_openlibs(L)
-    C.lua_settop(L,0)
-    
-    if C.lua_checkstack(L, 20) == 0 then
-        error("out of memory")
-    end
-    
-    -- Load the callback setup function
-    C.lua_getfield(L, C.LUA_GLOBALSINDEX, "loadstring")
-    C.lua_pushlstring(L, callback_setup_func, #callback_setup_func)
-    C.lua_call(L,1,1)
-    
-    -- Load the actual callback
-    C.lua_pushlstring(L, cbtype, #cbtype)
-    C.lua_pushlstring(L, callback_func, #callback_func)
-    local n = moveValues(L, ...)
-    local ret = C.lua_pcall(L,2+n,2,0)
 
-    if ret > 0 then
-        print(ffi.string(C.lua_tolstring(L,1,nil)))
-        error("error making callback",2)
-        return nil
-    end
-    -- Get and pop the callback function pointer
-    assert(C.lua_isnumber(L,2) ~= 0)
-    local ptr = C.lua_tointeger(L,2)
-    assert(ptr ~= 0)
-    C.lua_settop(L, 1)
-    obj.callback = ffi.cast(cbtype, ptr)
-    assert(obj.callback ~= nil)
-    
+	obj.callback = MakeCallback(L, cbtype, callback_func, ...)
     return obj
 end
 
 ---for getting another callback from the same Lua state
 function Callback:additional_cb(cb2,cb2type,...)
-    if type(cb2) == "function" then
-        local name,val = debug.getupvalue(cb2,1)
-        if name then
-            print("init callback function has upvalue ",name)
-            error("upvalues in init callback")
-        end
-        cb2 = string.dump(cb2)
-    end
-    local L = self.L
-    
-    C.lua_settop(L,0)
-    
-    if C.lua_checkstack(L, 20) == 0 then
-        error("out of memory")
-    end
-    -- Load the callback setup function
-    C.lua_getfield(L, C.LUA_GLOBALSINDEX, "loadstring")
-    C.lua_pushlstring(L, callback_setup_func, #callback_setup_func)
-    C.lua_call(L,1,1)
-    -- Load the actual callback
-    C.lua_pushlstring(L, cb2type, #cb2type)
-    C.lua_pushlstring(L, cb2, #cb2)
-    local n = moveValues(L, ...)
-    local ret = C.lua_pcall(L,2+n,2,0)
-    if ret > 0 then
-        print(ffi.string(C.lua_tolstring(L,1,nil)))
-        error("error making additional callback",2)
-        return nil
-    end
-     -- Get and pop the callback function pointer
-    assert(C.lua_isnumber(L,2) ~= 0)
-    local ptr = C.lua_tointeger(L,2)
-    assert(ptr ~= 0)
-    C.lua_settop(L, 1)
-    local callback = ffi.cast(cb2type, ptr)
-    assert(callback ~= nil)
-    
-    return callback
+    return MakeCallback(self.L, cb2type, cb2, ...)
 end
 --- Gets and returns the callback function pointer.
 function Callback:funcptr()

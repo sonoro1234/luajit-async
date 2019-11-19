@@ -108,8 +108,10 @@ if ffi.os == "Windows" and not WINUSEPTHREAD then
 		
 		local r = C.WaitForSingleObject(self.thread, timeout)
 		if r == C.WAIT_OBJECT_0_TH or r == C.WAIT_ABANDONED_TH then
-
-			return true
+			local result = ffi.new"unsigned long[1]"
+			local ret = C.GetExitCodeThread(self.thread,result)
+			if ret==0 then error_win(2) end
+			return true,result[0]
 		elseif r == C.WAIT_TIMEOUT_TH then
 
 			return false
@@ -146,7 +148,7 @@ else
 	end
 	function Thread:join(timeout)
 		if self.thread == nil then error("invalid thread",3) end
-		return pthread.join(self.thread)
+		return true,pthread.join(self.thread)
 	end
 	function Thread:free()
 		--if self.thread ~= nil then

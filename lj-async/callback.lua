@@ -63,6 +63,8 @@ ffi.cdef[[
     void lua_pushboolean (lua_State *L, int b);
     void lua_pushlightuserdata (lua_State *L, void *p);
 	void lua_createtable (lua_State *L, int narr, int nrec);
+	void lua_settable (lua_State *L, int index);
+	const char *lua_setupvalue (lua_State *L, int funcindex, int n);
 ]]
 
 -- Maps callback object ctypes to the callback pointer types

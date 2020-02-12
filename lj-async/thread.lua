@@ -146,9 +146,94 @@ else
 		self.thread = t
 		return self
 	end
+	
+	ffi.cdef[[
+	int pthread_timedjoin_np(pthread_t thread, void **retval,
+                                const struct timespec *abstime);
+	]]
+	
+	local has_pthread_timedjoin_np = pcall(function() return ffi.C.pthread_timedjoin_np end)
+	
+	if not has_pthread_timedjoin_np then
+		--[=[
+		ffi.cdef[[
+		struct args {
+		bool joined;
+		pthread_t td;
+		pthread_mutex_t mtx;
+		pthread_cond_t cond;
+		void **res;
+		};]]
+
+		local function waiter(ap)
+			struct args *args = ap;
+			pthread_join(args->td, args->res);
+			pthread_mutex_lock(&args->mtx);
+			args->joined = 1;
+			pthread_mutex_unlock(&args->mtx);
+			pthread_cond_signal(&args->cond);
+			return 0;
+		end
+
+		local function pthread_timedjoin_np(td, res, ts)
+			pthread_t tmp;
+			int ret;
+			struct args args = { .td = td, .res = res };
+		
+			pthread_mutex_init(&args.mtx, 0);
+			pthread_cond_init(&args.cond, 0);
+			pthread_mutex_lock(&args.mtx);
+		
+			ret = pthread_create(&tmp, 0, waiter, &args);
+			if (ret) goto done;
+		
+			do ret = pthread_cond_timedwait(&args.cond, &args.mtx, ts);
+			while (!args.joined && ret != ETIMEDOUT);
+		
+			pthread_mutex_unlock(&args.mtx);
+		
+			pthread_cancel(tmp);
+			pthread_join(tmp, 0);
+		
+			pthread_cond_destroy(&args.cond);
+			pthread_mutex_destroy(&args.mtx);
+		
+			return args.joined ? 0 : ret;
+		end
+		--]=]
+	end
+	
+	local function prepare_timeout(timeout)
+		local tsl = ffi.new'timespec'
+		pthread.C.clock_gettime(0,tsl)
+		local int, frac = math.modf(timeout)
+		tsl.s = tsl.s + int
+		tsl.ns = tsl.ns + frac * 1e9
+		while (tsl.ns >= 1e9) do
+			tsl.ns = tsl.ns - 1e9;
+			tsl.s = tsl.s + 1
+		end
+		return tsl
+	end
+	
 	function Thread:join(timeout)
 		if self.thread == nil then error("invalid thread",3) end
-		return true,pthread.join(self.thread)
+		if not timeout then
+			return true,pthread.join(self.thread)
+		elseif has_pthread_timedjoin_np then
+			tsl = prepare_timeout(timeout)
+			local status = ffi.new'void*[1]'
+			local ret = ffi.C.pthread_timedjoin_np(self.thread, status,tsl)
+			if ret == 0 then
+				return true, status[0]
+			elseif ret == ETIMEDOUT then
+				return false
+			else
+				error("error on pthread_mutex_timedlock:"..ret)
+			end
+		else
+			error("not pthread_timedjoin_np",2)
+		end
 	end
 	function Thread:free()
 		--if self.thread ~= nil then

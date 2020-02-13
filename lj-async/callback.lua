@@ -100,7 +100,7 @@ local function push(L, v, setupvals)
 
 			local uname, uv = debug.getupvalue(v, i)
 			if not uname then break end
-			print("push upvalue",v,i,uname,uv)
+			--print("push upvalue",v,i,uname,uv)
 			if v==uv then
 				error"recurrence in push function upvalues"
 			end

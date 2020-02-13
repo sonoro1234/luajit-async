@@ -140,6 +140,10 @@ else
 	callback_t = CallbackFactory("void *(*)(void *)")
 	
 	ffi.cdef[[
+	typedef int clockid_t;
+	int clock_gettime(clockid_t clk_id, timespec *tp);
+	]]
+	ffi.cdef[[
 	int pthread_timedjoin_np(pthread_t thread, void **retval,
                                 const struct timespec *abstime);
 	]]

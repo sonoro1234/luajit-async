@@ -6,8 +6,10 @@ local C = ffi.C
 
 -- Setup function ran by the Lua state to create
 local callback_setup_func = string.dump(function(cbtype, cbsource, ...)
+	--print("in callback_setup_func",cbtype, cbsource,...)
     local ffi = _G.require("ffi")
-    local initfunc = _G.loadstring(cbsource)
+    local initfunc = cbsource 
+	--local initfunc = _G.loadstring(cbsource)
     local ret_fail2 = cbtype:match("%s*(.-)%s*%(.-%*.-%)")
     ret_fail2 = (ret_fail2 ~= "void") and ffi.new(ret_fail2) or nil
     local xpcall, dtraceback, tostring, error = _G.xpcall, _G.debug.traceback, _G.tostring, _G.error
@@ -74,6 +76,7 @@ local Callback = {}
 Callback.__index = Callback
 
 local function push(L, v, setupvals)
+	
 	local xpcall, dtraceback, tostring, error = _G.xpcall, _G.debug.traceback, _G.tostring, _G.error
     local xpcall_hook = function(err) return dtraceback(tostring(err) or "<nonstring error>") end
 	--print("push", type(v), v)
@@ -86,6 +89,7 @@ local function push(L, v, setupvals)
 	elseif type(v) == 'string' then
 		C.lua_pushlstring(L,v,#v)
 	elseif type(v) == 'function' then
+
 		local stfunc = string.dump(v)
         C.lua_getfield(L, C.LUA_GLOBALSINDEX, "loadstring")
         C.lua_pushlstring(L, stfunc, #stfunc)
@@ -93,19 +97,31 @@ local function push(L, v, setupvals)
 		if setupvals then
 		local i = 1
 		while true do
+
 			local uname, uv = debug.getupvalue(v, i)
 			if not uname then break end
-			--print("push upvalue",uname,uv)
+			print("push upvalue",v,i,uname,uv)
+			if v==uv then
+				error"recurrence in push function upvalues"
+			end
+			--push(L, uv, setupvals)
+			--local ok = true
 			--local ok,err = pcall(push, L, uv, setupvals)
 			local ok,err = xpcall(push, xpcall_hook, L, uv, setupvals)
+						
 			if not ok then
+				--error("false error")
 				local info = debug.getinfo(v)
-				print("error pushing upvalue", uname, "of function:", info.name,"defined in",info.source,info.linedefined); 
+				
+				print("error pushing upvalue", uname, "of function:", info.name,"defined in",info.source,info.linedefined);
+				
 				print(err)
-				error("pushing upvalue") 
+				
+				error("pushing upvalue",2) 
+			else
+				C.lua_setupvalue(L, -2, i)
+				i = i + 1
 			end
-			C.lua_setupvalue(L, -2, i)
-			i = i + 1
 		end
 		end
 	elseif type(v) == 'table' then
@@ -154,12 +170,14 @@ end
 
 local function MakeCallback(L, cb2type, cb2, ... )
     if type(cb2) == "function" then
+	--[[
         local name,val = debug.getupvalue(cb2,1)
         if name then
             print("init callback function has upvalue ",name)
             error("upvalues in init callback")
         end
         cb2 = string.dump(cb2)
+		--]]
     end
     C.lua_settop(L,0)
     
@@ -172,7 +190,8 @@ local function MakeCallback(L, cb2type, cb2, ... )
     C.lua_call(L,1,1)
     -- Load the actual callback
     C.lua_pushlstring(L, cb2type, #cb2type)
-    C.lua_pushlstring(L, cb2, #cb2)
+    --C.lua_pushlstring(L, cb2, #cb2)
+	push(L,cb2,true)
     local n = moveValues(L, ...)
     local ret = C.lua_pcall(L,2+n,2,0)
     if ret > 0 then

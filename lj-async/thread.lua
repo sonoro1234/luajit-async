@@ -85,6 +85,7 @@ if ffi.os == "Windows" and not WINUSEPTHREAD then
 		local self = setmetatable({}, Thread)
 		local cb = callback_t(func, ...)
 		self.cb = cb
+		self.ud = ud -- anchor
 		
 		local t = C.CreateThread(nil, 0, cb:funcptr(), ud, 0, nil)
 		if t == nil then
@@ -138,15 +139,6 @@ else
 	local pthread = require"pthread"
 	callback_t = CallbackFactory("void *(*)(void *)")
 	
-	function Thread.new(func, ud, ...)
-		local self = setmetatable({}, Thread)
-		local cb = callback_t(func, ...)
-		self.cb = cb
-		local t = pthread.new(cb:funcptr(),nil,ud)
-		self.thread = t
-		return self
-	end
-	
 	ffi.cdef[[
 	int pthread_timedjoin_np(pthread_t thread, void **retval,
                                 const struct timespec *abstime);
@@ -154,53 +146,47 @@ else
 	
 	local has_pthread_timedjoin_np = pcall(function() return ffi.C.pthread_timedjoin_np end)
 	
-	if not has_pthread_timedjoin_np then
-		--[=[
-		ffi.cdef[[
-		struct args {
-		bool joined;
-		pthread_t td;
-		pthread_mutex_t mtx;
-		pthread_cond_t cond;
-		void **res;
-		};]]
+	local function addr(cdata)
+		return tonumber(ffi.cast('intptr_t', ffi.cast('void*', cdata)))
+	end
 
-		local function waiter(ap)
-			struct args *args = ap;
-			pthread_join(args->td, args->res);
-			pthread_mutex_lock(&args->mtx);
-			args->joined = 1;
-			pthread_mutex_unlock(&args->mtx);
-			pthread_cond_signal(&args->cond);
-			return 0;
-		end
+	local function ptr(ctype, p)
+		return ffi.cast(ctype, ffi.cast('void*', p))
+	end
+	
+	function Thread.new(func, ud, ...)
+		local self = setmetatable({}, Thread)
 
-		local function pthread_timedjoin_np(td, res, ts)
-			pthread_t tmp;
-			int ret;
-			struct args args = { .td = td, .res = res };
-		
-			pthread_mutex_init(&args.mtx, 0);
-			pthread_cond_init(&args.cond, 0);
-			pthread_mutex_lock(&args.mtx);
-		
-			ret = pthread_create(&tmp, 0, waiter, &args);
-			if (ret) goto done;
-		
-			do ret = pthread_cond_timedwait(&args.cond, &args.mtx, ts);
-			while (!args.joined && ret != ETIMEDOUT);
-		
-			pthread_mutex_unlock(&args.mtx);
-		
-			pthread_cancel(tmp);
-			pthread_join(tmp, 0);
-		
-			pthread_cond_destroy(&args.cond);
-			pthread_mutex_destroy(&args.mtx);
-		
-			return args.joined ? 0 : ret;
+		if not has_pthread_timedjoin_np then
+			self.mutex = pthread.mutex()
+			self.cond = pthread.cond()
+			self.done = ffi.new"bool[1]"
+			local oldfunc = func
+			func = function(cond, mut ,done ,...)
+				local ffi = require"ffi"
+				local pthread = require"pthread"
+				cond = ffi.cast("pthread_cond_t*", ffi.cast('void*', cond))
+				mut = ffi.cast("pthread_mutex_t*", ffi.cast('void*', mut))
+				done = ffi.cast("bool*", ffi.cast('void*', done))
+				local inner_f = oldfunc(...)
+				return function(ud1)
+					local ret = inner_f(ud1)
+					mut:lock()
+					done[0] = true
+					cond:signal()
+					mut:unlock()
+					return ret
+				end
+			end
+			self.cb = callback_t(func, addr(self.cond), addr(self.mutex), addr(self.done), ...)
+		else
+			self.cb = callback_t(func, ...)
 		end
-		--]=]
+		
+		self.ud = ud --anchor
+		local t = pthread.new(self.cb:funcptr(),nil,ud)
+		self.thread = t
+		return self
 	end
 	
 	local function prepare_timeout(timeout)
@@ -221,7 +207,7 @@ else
 		if not timeout then
 			return true,pthread.join(self.thread)
 		elseif has_pthread_timedjoin_np then
-			tsl = prepare_timeout(timeout)
+			local tsl = prepare_timeout(timeout)
 			local status = ffi.new'void*[1]'
 			local ret = ffi.C.pthread_timedjoin_np(self.thread, status,tsl)
 			if ret == 0 then
@@ -232,7 +218,21 @@ else
 				error("error on pthread_mutex_timedlock:"..ret)
 			end
 		else
-			error("not pthread_timedjoin_np",2)
+			local tsl = prepare_timeout(timeout)
+			self.mutex:lock()
+			if not self.done[0] then
+				
+				local ret = self.cond:wait(self.mutex, tsl.s + tsl.ns*1e-9)
+				self.mutex:unlock()
+				if not ret then 
+					return false -- timeout
+				else
+					return true,pthread.join(self.thread)
+				end
+			else
+				self.mutex:unlock()
+				return true,pthread.join(self.thread)
+			end
 		end
 	end
 	function Thread:free()

@@ -21,16 +21,6 @@ if ffi.os == "Windows" and not WINUSEPTHREAD then
 	int GetExitCodeThread(void*,uint32_t*);
 	uint32_t WaitForSingleObject(void*, uint32_t);
 	
-	typedef uint32_t (__stdcall *ThreadProc)(void*);
-	void* CreateThread(
-		void* lpThreadAttributes,
-		size_t dwStackSize,
-		ThreadProc lpStartAddress,
-		void* lpParameter,
-		uint32_t dwCreationFlags,
-		uint64_t* lpThreadId
-	);
-	int TerminateThread(void*, uint32_t);
 	
 	void* CreateMutexA(void*, int, const char*);
 	int ReleaseMutex(void*);
@@ -50,13 +40,13 @@ if ffi.os == "Windows" and not WINUSEPTHREAD then
 	-- Some helper functions
 	local function error_win(lvl)
 		local errcode = C.GetLastError()
-		local str = str_b(1024)
+		local str = ffi.new("char[?]",1024)
 		local numout = C.FormatMessageA(bit.bor(C.FORMAT_MESSAGE_FROM_SYSTEM,
 			C.FORMAT_MESSAGE_IGNORE_INSERTS), nil, errcode, 0, str, 1023, nil)
 		if numout == 0 then
 			error("Windows Error: (Error calling FormatMessage)", lvl)
 		else
-			error("Windows Error: "..ffi.string(str, numout), lvl)
+			error("Windows Error("..tostring(tonumber(errcode)).."): "..ffi.string(str, numout), lvl)
 		end
 	end
 	
@@ -195,5 +185,14 @@ end
 Mutex.__gc = Mutex.destroy
 
 local mmutex = ffi.metatype("mutextype", Mutex)
+
+--[[
+local mm = mmutex()
+for i=1,1000000 do
+	mm:lock()
+	mm:unlock()
+end
+print"done"
+--]]
 
 return mmutex

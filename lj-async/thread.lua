@@ -40,9 +40,6 @@ if ffi.os == "Windows" and not WINUSEPTHREAD then
 		);
 		int TerminateThread(void*, unsigned long);
 		
-		void* CreateMutexA(void*, int, const char*);
-		int ReleaseMutex(void*);
-		
 		unsigned long GetLastError();
 		unsigned long FormatMessageA(
 			unsigned long dwFlags,

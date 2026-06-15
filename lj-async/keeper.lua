@@ -121,7 +121,8 @@ local function pop_DATA(L, key)
 	C.lua_gettable(L, -2) --DATA/keyval
 	if not(C.lua_type(L, -1)==C.LUA_TTABLE) then C.lua_settop(L, -(1)-1);return nil end
 	local n = C.lua_objlen(L,-1)
-
+	n = tonumber(n)
+	
 	C.lua_rawgeti(L, -1, 1)--DATA/table/table[1]
 
 	local val = pop_value(L,-1)

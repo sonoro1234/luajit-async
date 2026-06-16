@@ -63,7 +63,7 @@ local M = {}
 local lookup_t = {} --for detectin cicles
 local xpcall_hook = function(err) return debug.traceback(tostring(err) or "<nonstring error>") end
 local function push(L, v, setupvals)
-	
+	--print("push type",type(v),v)
 	--local xpcall, dtraceback, tostring, error = _G.xpcall, _G.debug.traceback, _G.tostring, _G.error
 	--local  dtraceback = debug.traceback
     --local xpcall_hook = function(err) return debug.traceback(tostring(err) or "<nonstring error>") end
@@ -88,7 +88,7 @@ local function push(L, v, setupvals)
 
 			local uname, uv = debug.getupvalue(v, i)
 			if not uname then break end
-			print("push upvalue",v,i,uname,uv)
+			--print("push upvalue",v,i,"uname",uname,uv)
 			if v==uv then
 				error"recurrence in push function upvalues"
 			end

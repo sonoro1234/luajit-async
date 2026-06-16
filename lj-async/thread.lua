@@ -162,6 +162,7 @@ else
 			self.mutex = pthread.mutex()
 			self.cond = pthread.cond()
 			self.done = ffi.new"bool[1]"
+			local is_winpthread = WINUSEPTHREAD
 			local oldfunc = func
 			func = function(cond, mut ,done ,...)
 				local ffi = require"ffi"
@@ -169,6 +170,7 @@ else
 				cond = ffi.cast("pthread_cond_t*", ffi.cast('void*', cond))
 				mut = ffi.cast("pthread_mutex_t*", ffi.cast('void*', mut))
 				done = ffi.cast("bool*", ffi.cast('void*', done))
+				WINUSEPTHREAD = is_winpthread
 				local inner_f = oldfunc(...)
 				return function(ud1)
 					local ret = inner_f(ud1)
@@ -203,42 +205,71 @@ else
 		return tsl
 	end
 	
-	function Thread:join(timeout)
+	local function prepare_timeout2(timeout)
+		local tsl = prepare_timeout(timeout)
+		return tonumber(tsl.s + tsl.ns*1e-9)
+	end
+	
+	local function get_unsigned_long(ud)
+		ud = ffi.cast("struct { unsigned long x; }*",ud)
+		return ud.x
+	end
+	
+	function Thread:join(timeout, ret_unsigned_long)
+
 		if self.thread == nil then error("invalid thread",3) end
 		if not timeout then
-			return true,pthread.join(self.thread)
+			local ret = pthread.join(self.thread)
+			ret = ret_unsigned_long and get_unsigned_long(ret) or ret
+			return true, ret
 		elseif has_pthread_timedjoin_np then
 			local tsl = prepare_timeout(timeout)
 			local status = ffi.new'void*[1]'
-			local ret = ffi.C.pthread_timedjoin_np(self.thread, status,tsl)
-			if ret == 0 then
-				return true, status[0]
+			local ret_np = ffi.C.pthread_timedjoin_np(self.thread, status,tsl)
+			if ret_np == 0 then
+				local ret = status[0]
+				ret = ret_unsigned_long and get_unsigned_long(ret) or ret
+				return true, ret
 			elseif ret == ETIMEDOUT then
 				return false
 			else
 				error("error on pthread_mutex_timedlock:"..ret)
 			end
 		else
-			local tsl = prepare_timeout(timeout)
+			--gets it as os.time (or pthread.C.time) + timeout
+			local tsl = prepare_timeout2(timeout)
 			self.mutex:lock()
 			if not self.done[0] then
-				
-				local ret = self.cond:wait(self.mutex, tsl.s + tsl.ns*1e-9)
+				local ret_w = self.cond:wait(self.mutex, tsl) -- tsl.s + tsl.ns*1e-9)
 				self.mutex:unlock()
-				if not ret then 
+				if not ret_w then 
 					return false -- timeout
 				else
-					return true,pthread.join(self.thread)
+					local ret = pthread.join(self.thread)
+					ret = ret_unsigned_long and get_unsigned_long(ret) or ret
+					return true, ret
 				end
 			else
 				self.mutex:unlock()
-				return true,pthread.join(self.thread)
+				local ret = pthread.join(self.thread)
+				ret = ret_unsigned_long and get_unsigned_long(ret) or ret
+				return true, ret
 			end
 		end
 	end
 	function Thread:free()
 		--if self.thread ~= nil then
 		--end
+	end
+end
+
+-----------
+function Thread._return(val)
+	if ffi.os == "Windows" and not WINUSEPTHREAD then 
+		return val
+	else
+		local ud = ffi.new("struct { unsigned long x; }",val)
+		return ud
 	end
 end
 

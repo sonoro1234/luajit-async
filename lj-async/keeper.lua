@@ -59,7 +59,7 @@ function Keeper:send(key,val)
 	push(L, key, true) --DATA/key
 	C.lua_gettable(L, top) --DATA/keyval
 	local istable = C.lua_type(L, -1)==C.LUA_TTABLE
-	--print("istable",istable)
+	--this key already exists
 	if istable then
 		local leng = C.lua_objlen(L, -1)
 		C.lua_pushnumber(L, leng + 1)
@@ -84,7 +84,6 @@ function Keeper:send(key,val)
 
 end
 local function pop_value(L, index)
-	--print("pop_value",index)
 	index = index or -1
 	if C.lua_type(L, index)==C.LUA_TNIL then
 		return nil
@@ -106,6 +105,10 @@ local function pop_value(L, index)
 			C.lua_settop(L, -(1)-1) 
 		end
 		return tab
+	elseif C.lua_type(L, index)==C.LUA_TLIGHTUSERDATA then
+		return C.lua_topointer(L, index)
+	elseif C.lua_type(L, index)==C.LUA_TFUNCTION then
+		error"pop_value bad value: function"
 	else
 		error"pop_value bad value"
 	end
@@ -169,16 +172,17 @@ function Keeper:receive(...)
     return val
 end
 
-
+--for debugging
 function Keeper:read()
-	print"read"
+	--print"read"
 	local L = self.L
 	local code = [[print("readsss",DATA,#DATA)]]
 	local code =[[
+	print("Keeper:read DATA")
 	for k,v in pairs(DATA) do
-		print("key",k,v)
-		for i,val in ipairs(v) do
-			print(i,val)
+		print("Keeper:read DATA","key",k,v)
+		for i,val in pairs(v) do
+			print("Keeper:read DATA","",i,val)
 		end
 	 end
 	]]

@@ -33,6 +33,7 @@ ffi.cdef[[
     int lua_isnumber(lua_State*,int);
     const char *lua_tostring (lua_State *L, int index);
     const char *lua_tolstring (lua_State *L, int index, size_t *len);
+    const void *lua_topointer (lua_State *L, int index);
     void lua_pushnumber (lua_State *L, double n);
     void lua_pushnil (lua_State *L);
     void lua_pushboolean (lua_State *L, int b);
@@ -54,7 +55,7 @@ ffi.cdef[[
 	void lua_rawgeti (lua_State *L, int index, int n);
 	void lua_rawseti (lua_State *L, int index, int n);
 	//const char *lua_tostring (lua_State *L, int index);
-	const char *lua_tolstring (lua_State *L, int index, size_t *len);
+	//const char *lua_tolstring (lua_State *L, int index, size_t *len);
 	int lua_toboolean (lua_State *L, int index);
 ]]
 
@@ -101,9 +102,9 @@ local function push(L, v, setupvals)
 				--error("false error")
 				local info = debug.getinfo(v)
 				
-				print("error pushing upvalue", uname, "of function:", info.name,"defined in",info.source,info.linedefined);
+				io.write("error pushing upvalue: ", uname, " of function: ", info.name," defined in ",info.source,info.linedefined,"\n");
 				
-				print(err)
+				io.write(err,"\n")
 				
 				error("pushing upvalue",2) 
 			else

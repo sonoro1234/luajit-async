@@ -5,7 +5,6 @@ local C = ffi.C
 
 local common = require"lj-async.lua_cdefs"
 local push = common.push
-local push_begin = common.push_begin
 
 local M = {}
 
@@ -42,32 +41,8 @@ function Keeper:__new()
     return obj
 end
 
-function Keeper:clear(key)
-	assert(type(key)~="table", "keys cant be tables.")
-	assert(type(key)~="function", "keys cant be functions.")
-	local L = self.L
-	self.mutex:lock()
-	C.lua_settop(L,0) -- eliminar pila
-
-    if C.lua_checkstack(L, 20) == 0 then
-        error("out of memory")
-    end
-
-	C.lua_getfield(L, C.LUA_GLOBALSINDEX, "DATA") --DATA
-	assert(C.lua_type(L, -1) == C.LUA_TTABLE)
-
-	push(L, key, true) --DATA/key
-	C.lua_createtable(L,0,0); --DATA/key/{}
-	C.lua_settable(L, -3);        --DATA
-	
-	self.mutex:unlock()
-
-end
-
 function Keeper:send(key,val)
 	--print("send",key,val,self.L)
-	assert(type(key)~="table", "keys cant be tables.")
-	assert(type(key)~="function", "keys cant be functions.")
 	local L = self.L
 	self.mutex:lock()
 	C.lua_settop(L,0) -- eliminar pila
@@ -87,9 +62,8 @@ function Keeper:send(key,val)
 	--this key already exists
 	if istable then
 		local leng = C.lua_objlen(L, -1)
-		C.lua_pushnumber(L, leng + 1) -- #table + 1
-		--if type(val)=="table" then print("--going to push1",val) end
-		push_begin(L, val, true)
+		C.lua_pushnumber(L, leng + 1)
+		push(L, val, true)
 		C.lua_settable(L, -3); 
 	else
 		assert(C.lua_type(L, -1)==C.LUA_TNIL)
@@ -99,25 +73,17 @@ function Keeper:send(key,val)
 		C.lua_createtable(L,0,0); --DATA/table
 		local top1 = C.lua_gettop(L)
 		C.lua_pushnumber(L, 1) --DATA/table/1
-		--if type(val)=="table" then print("--going to push2",val,"top:",C.lua_gettop(L)) end
-		push_begin(L, val, true) --DATA/table/1/val
-		--if type(val)=="table" then print("--after to push2",val,"top:",C.lua_gettop(L)) end
+		push(L, val, true) --DATA/table/1/val
 		C.lua_settable(L, top1) --DATA/table
 		push(L, key, true) --DATA/table/key
 		C.lua_insert(L, 2) --DATA/key/table
 		C.lua_settable(L, -3); --DATA
-		--if type(val)=="table" then print("-- end going to push2",val,"top:",C.lua_gettop(L)) end
 	end
 	
 	self.mutex:unlock()
 
 end
-
-local look_up_pop = {}
 local function pop_value(L, index)
-	--local print = function() end
-	local positive_index = C.lua_gettop(L)+index+1
-	--print("pop_value",index, positive_index)
 	index = index or -1
 	if C.lua_type(L, index)==C.LUA_TNIL then
 		return nil
@@ -128,60 +94,40 @@ local function pop_value(L, index)
 	elseif C.lua_type(L, index)==C.LUA_TSTRING then
 		return ffi.string(C.lua_tolstring(L, index,nil))
 	elseif C.lua_type(L, index)==C.LUA_TTABLE then
-		if look_up_pop[positive_index] then 
-			--print("------recursion",index,"top:",C.lua_gettop(L))
-			return look_up_pop[positive_index]
-		end
 		local tab = {}
-		look_up_pop[positive_index] = tab
-		--print("---saving look_up_pop",index,positive_index,tab)
-		--print("poping table from",index, C.lua_gettop(L))
-		C.lua_pushnil(L); --first key
-		--print("before while",index, C.lua_gettop(L))
+		C.lua_pushnil(L);
 		while (C.lua_next(L, index-1) ~= 0) do
-			--print("next iter-------------------------------- top:", C.lua_gettop(L))
+			--print"next iter"
 			local k = pop_value(L, -2)
-			local top = C.lua_gettop(L)
 			local v  = pop_value(L, -1)
-			--print("key val top",k,v,top)
 			tab[k] = v
-			--C.lua_pop(L,1) cant be used because: #define lua_pop(L,n)lua_settop(L,-(n)-1)
+			--C.lua_pop(L,1)
 			C.lua_settop(L, -(1)-1) 
-			--print("next iter end---------------------------- top:", C.lua_gettop(L))
 		end
-		--print("after while",positive_index)
 		return tab
 	elseif C.lua_type(L, index)==C.LUA_TLIGHTUSERDATA then
 		return C.lua_topointer(L, index)
 	elseif C.lua_type(L, index)==C.LUA_TFUNCTION then
-		error"pop_value bad value: function."
+		error"pop_value bad value: function"
 	else
 		error"pop_value bad value"
 	end
 end
 
 local function pop_DATA(L, key)
-	assert(type(key)~="table", "keys cant be tables.")
-	assert(type(key)~="function", "keys cant be functions.")
-	--local print = function() end --to stop printing
+
 	--print("pop_DATA",key,C.lua_gettop(L))
 	push(L, key, true)--DATA/key
 	--C.lua_pushlstring(L,key,#key)
 	--print("pop_DATA2",key,C.lua_gettop(L))
-
+---[[
 	C.lua_gettable(L, -2) --DATA/keyval
-	if not(C.lua_type(L, -1)==C.LUA_TTABLE) then 
-		C.lua_settop(L, -(1)-1);
-		--print("not table in key:",key)
-		return nil 
-	end
-	--print("we have table in ",key)
+	if not(C.lua_type(L, -1)==C.LUA_TTABLE) then C.lua_settop(L, -(1)-1);return nil end
 	local n = C.lua_objlen(L,-1)
 	n = tonumber(n)
 
 	C.lua_rawgeti(L, -1, 1)--DATA/table/table[1]
-	--print"going to pop_value"
-	look_up_pop = {} --clean look_up_pop
+
 	local val = pop_value(L,-1)
 	--print("val",val)
 	C.lua_settop(L, -(1)-1)--DATA/table
@@ -193,7 +139,9 @@ local function pop_DATA(L, key)
 	C.lua_pushnil(L) --DATA/table/nil
 	C.lua_rawseti(L,-2,n) --DATA/table
 	C.lua_settop(L, -(1)-1)
-	--print("pop_DATA3",key,C.lua_gettop(L))
+--]]
+-- C.lua_settop(L, -(1)-1)
+-- print("pop_DATA3",key,C.lua_gettop(L))
 	return val
 
 end
@@ -207,6 +155,7 @@ function Keeper:receive(...)
         error("out of memory")
     end
     
+	
 	C.lua_getfield(L, C.LUA_GLOBALSINDEX, "DATA") --DATA
     for i=1,n do
         local v = select(i, ...)
@@ -223,7 +172,7 @@ function Keeper:receive(...)
     return val
 end
 
---for debugging, reads and posts DATA
+--for debugging
 function Keeper:read()
 	--print"read"
 	local L = self.L
@@ -236,21 +185,13 @@ function Keeper:read()
 			print("Keeper:read DATA","",i,val)
 		end
 	 end
-	 local ok,serializer = pcall(require,"imgui.libs.serializer")
-	 if ok then
-		print(serializer("tab",DATA))
-	 end
-	 -- print("globals")
-	 -- for k,v in pairs(_G) do
-		-- print("Keeper:read _G","key",k,v)
-	 -- end
 	]]
 
 	assert(C.luaL_loadstring(L, code)==0)
 
 	--C.lua_call(L,0,0)
-	local ret, err = C.lua_pcall(L, 0, C.LUA_MULTRET, 0)
-	assert(ret==0, err)
+	local ret = C.lua_pcall(L, 0, C.LUA_MULTRET, 0)
+	assert(ret==0)
 
 end
 
@@ -261,5 +202,35 @@ function M.KeeperCast(v)
 	return ffi.cast("keeper*",v)
 end
 
+--[[
+require"anima.utils"
+local K = M.MakeKeeper()
 
+
+K:send("uno",11)
+K:send("uno",false)
+K:send("dos",33)
+K:send("uno","stringgg")
+local t = {1,pedro={hola=false},3}
+K:send("uno",t)
+K:send("uno",t)
+
+--K:read()
+print(K.mutex)
+print"receive--------------------"
+for i=1,7 do
+print("--------receive",i,K.mutex.mutex)
+local key,val = K:receive("uno","dos")
+prtable(key,val)
+end
+--]]
+--[[
+local K = M.MakeKeeper()
+for i=1,20000 do 
+--print(i)
+	K:receive("clace") 
+	--K.mutex:lock()
+	--K.mutex:unlock()
+end
+--]]
 return M

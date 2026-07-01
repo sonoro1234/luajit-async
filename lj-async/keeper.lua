@@ -150,6 +150,7 @@ local function pop_value(L, index)
 			--print("next iter end---------------------------- top:", C.lua_gettop(L))
 		end
 		--print("after while",positive_index)
+		look_up_pop[positive_index] = nil
 		return tab
 	elseif C.lua_type(L, index)==C.LUA_TLIGHTUSERDATA then
 		return C.lua_topointer(L, index)

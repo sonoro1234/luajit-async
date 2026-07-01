@@ -39,6 +39,7 @@ ffi.cdef[[
     void lua_pushboolean (lua_State *L, int b);
     void lua_pushlightuserdata (lua_State *L, void *p);
 	void lua_createtable (lua_State *L, int narr, int nrec);
+	//void lua_newtable (lua_State *L);
 	void lua_settable (lua_State *L, int index);
 	const char *lua_setupvalue (lua_State *L, int funcindex, int n);
 	//void lua_setglobal (lua_State *L, const char *name);
@@ -57,6 +58,9 @@ ffi.cdef[[
 	//const char *lua_tostring (lua_State *L, int index);
 	//const char *lua_tolstring (lua_State *L, int index, size_t *len);
 	int lua_toboolean (lua_State *L, int index);
+	void lua_pushvalue (lua_State *L, int index);
+	int lua_rawequal (lua_State *L, int index1, int index2);
+	void lua_pop (lua_State *L, int n);
 ]]
 
 local M = {}
@@ -64,11 +68,8 @@ local M = {}
 local lookup_t = {} --for detectin cicles
 local xpcall_hook = function(err) return debug.traceback(tostring(err) or "<nonstring error>") end
 local function push(L, v, setupvals)
-	--print("push type",type(v),v)
-	--local xpcall, dtraceback, tostring, error = _G.xpcall, _G.debug.traceback, _G.tostring, _G.error
-	--local  dtraceback = debug.traceback
-    --local xpcall_hook = function(err) return debug.traceback(tostring(err) or "<nonstring error>") end
-	--print("push", type(v), v)
+	--local print = function() end
+	--print("push    ", type(v), v, "top:",C.lua_gettop(L))
     if type(v) == 'nil' then
 		C.lua_pushnil(L)
 	elseif type(v) == 'boolean' then
@@ -94,18 +95,13 @@ local function push(L, v, setupvals)
 				error"recurrence in push function upvalues"
 			end
 			--push(L, uv, setupvals)
-			--local ok = true
 			--local ok,err = pcall(push, L, uv, setupvals)
 			local ok,err = xpcall(push, xpcall_hook, L, uv, setupvals)
 						
 			if not ok then
-				--error("false error")
 				local info = debug.getinfo(v)
-				
 				io.write("error pushing upvalue: ", uname, " of function: ", info.name," defined in ",info.source,info.linedefined,"\n");
-				
 				io.write(err,"\n")
-				
 				error("pushing upvalue",2) 
 			else
 				C.lua_setupvalue(L, -2, i)
@@ -114,21 +110,48 @@ local function push(L, v, setupvals)
 		end
 		end
 	elseif type(v) == 'table' then
-		if lookup_t[v] then error"push: cicles in table" end
-		lookup_t[v] = true
 		--NOTE: doesn't check duplicate refs
-		--NOTE: doesn't check for cycles
 		--NOTE: stack-bound on table depth
 		assert(C.lua_checkstack(L, 3) ~= 0, 'stack overflow')
+		if lookup_t[v] then print("---pre create lookup",v ,lookup_t[v]);error"lookup_t[v]" end
 		C.lua_createtable(L, 0, 0)
 		local top = C.lua_gettop(L)
-		for k,v in pairs(v) do
-			push(L, k, setupvals)
-			push(L, v, setupvals)
+		lookup_t[v] = top
+		--print("-----push table create in",v,top)
+		for k,w in pairs(v) do
+			--print("--k,w",k,w)
+			if lookup_t[k] then
+				if type(lookup_t[k]) == "string" then
+					C.lua_getfield(L, C.LUA_GLOBALSINDEX, lookup_t[k]);
+				else
+					C.lua_pushvalue(L, lookup_t[k])
+				end
+			else
+				push(L, k, setupvals)
+			end
+			if lookup_t[w] then
+				--print("-------lookup_t[w]",lookup_t[w])
+				if type(lookup_t[w]) == "string" then
+					C.lua_getfield(L, C.LUA_GLOBALSINDEX, lookup_t[w]);
+				else
+					C.lua_pushvalue(L, lookup_t[w])
+				end
+			else
+				push(L, w, setupvals)
+			end
 			C.lua_settable(L, top)
+			--print("--set k,w",k,w, top, "top:", C.lua_gettop(L))
 		end
 		assert(C.lua_gettop(L) == top)
-		lookup_t[v] = nil
+
+		if lookup_t[v] then 
+			--print("==== before lookup_t[v] = nil",v,lookup_t[v], "top:", C.lua_gettop(L))
+			local gfield = "lookup_t"..tostring(v):gsub("[: ]+","")
+			C.lua_setfield(L, C.LUA_GLOBALSINDEX, gfield); -- consumes val
+			C.lua_getfield(L, C.LUA_GLOBALSINDEX, gfield); -- to restore val
+			lookup_t[v] = gfield
+			--print("==== after lookup_t[v] = nil",v,lookup_t[v], "top:", C.lua_gettop(L))
+		end
 	elseif type(v) == 'userdata' then
 		--NOTE: there's no Lua API to get the size or lightness of a userdata,
 		--so we don't have enough info to duplicate a userdata automatically.
@@ -143,8 +166,20 @@ local function push(L, v, setupvals)
 		--we push it as a pointer
 		C.lua_pushlightuserdata(L,v)
 	end
+	--print("push end", type(v), v, "top:",C.lua_gettop(L))
 end
 
 M.push = push
-
+M.push_begin = function(L, v, setupvals)
+	--print("=========================push_begin prints lookup_t")
+	for k,v in pairs(lookup_t) do
+		--print("deleting",k,v)
+		--delete lookup_t from globals
+		C.lua_pushnil(L)
+		C.lua_setfield(L, C.LUA_GLOBALSINDEX, v);
+	end
+	--print("=====================end push_begin prints lookup_t")
+	lookup_t = {} --clear lookup_t
+	push(L, v, setupvals)
+end
 return M

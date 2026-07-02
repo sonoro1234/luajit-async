@@ -170,16 +170,15 @@ local function push(L, v, setupvals)
 end
 
 M.push = push
-M.push_begin = function(L, v, setupvals)
-	--print("=========================push_begin prints lookup_t")
+M.init_push = function(L)
+	--print("=========================init_push clears lookup_t")
 	for k,v in pairs(lookup_t) do
 		--print("deleting",k,v)
 		--delete lookup_t from globals
 		C.lua_pushnil(L)
 		C.lua_setfield(L, C.LUA_GLOBALSINDEX, v);
 	end
-	--print("=====================end push_begin prints lookup_t")
+	--print("=====================end init_push clears lookup_t")
 	lookup_t = {} --clear lookup_t
-	push(L, v, setupvals)
 end
 return M

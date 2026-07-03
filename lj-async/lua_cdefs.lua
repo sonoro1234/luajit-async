@@ -100,9 +100,9 @@ local function push(L, v, setupvals)
 						
 			if not ok then
 				local info = debug.getinfo(v)
-				io.write("error pushing upvalue: ", uname, " of function: ", info.name," defined in ",info.source,info.linedefined,"\n");
+				io.write(string.format("error pushing upvalue: %s of function %q %q from %s:%d\n", uname, info.name or "unnamed", tostring(info.fun),info.source,info.linedefined))
 				io.write(err,"\n")
-				error("pushing upvalue",2) 
+				error("pushing upvalue from function",2) 
 			else
 				C.lua_setupvalue(L, -2, i)
 				i = i + 1
@@ -158,7 +158,7 @@ local function push(L, v, setupvals)
 		error('Not implemented push userdata', 2)
 	elseif type(v) == 'thread' then
 		--NOTE: there's no Lua API to get the 'lua_State*' of a coroutine.
-		error('Not implemented push thread', 2)
+		error('Not implemented push coroutine', 2)
 	elseif type(v) == 'cdata' then
 		--NOTE: there's no Lua C API to push a cdata.
 		--cdata are not shareable anyway because ctypes are not shareable.

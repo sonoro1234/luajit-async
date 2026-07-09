@@ -141,8 +141,7 @@ else
 	int clock_gettime(clockid_t clk_id, timespec *tp);
 	]]
 	ffi.cdef[[
-	int pthread_timedjoin_np(pthread_t thread, void **retval,
-                                const struct timespec *abstime);
+	int pthread_timedjoin_np(pthread_t thread, void **retval, const timespec *abstime);
 	]]
 	
 	local has_pthread_timedjoin_np = pcall(function() return ffi.C.pthread_timedjoin_np end)

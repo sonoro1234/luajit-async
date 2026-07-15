@@ -39,6 +39,7 @@ if ffi.os == "Windows" and not WINUSEPTHREAD then
 			unsigned long* lpThreadId
 		);
 		int TerminateThread(void*, unsigned long);
+		void ExitThread(unsigned long);
 		
 		unsigned long GetLastError();
 		unsigned long FormatMessageA(
@@ -132,6 +133,18 @@ if ffi.os == "Windows" and not WINUSEPTHREAD then
 			--self.cb = nil
 		end
 	end
+	
+	function Thread._return(val)
+		return val
+	end
+	function Thread:Exit(val)
+		C.TerminateThread(self.thread, val)
+	end
+	function Thread.exit(val)
+		print("call ExitThread")
+		C.ExitThread(val)
+		print"done"
+	end
 else
 	local pthread = require"pthread"
 	callback_t = CallbackFactory("void *(*)(void *)")
@@ -147,7 +160,7 @@ else
 	local has_pthread_timedjoin_np = pcall(function() return ffi.C.pthread_timedjoin_np end)
 	
 	local function addr(cdata)
-		return tonumber(ffi.cast('intptr_t', ffi.cast('void*', cdata)))
+		return tonumber(ffi.cast('uintptr_t', ffi.cast('void*', cdata)))
 	end
 
 	local function ptr(ctype, p)
@@ -172,11 +185,16 @@ else
 				WINUSEPTHREAD = is_winpthread
 				local inner_f = oldfunc(...)
 				return function(ud1)
-					local ret = inner_f(ud1)
+					--local ret = inner_f(ud1)
+					local ok, ret = pcall(inner_f, ud1)
+					--print("--------inner_f ret", ok, ret)
 					mut:lock()
 					done[0] = true
 					cond:signal()
 					mut:unlock()
+					if not ok then 
+						error(ret) 
+					end
 					return ret
 				end
 			end
@@ -260,16 +278,20 @@ else
 		--if self.thread ~= nil then
 		--end
 	end
-end
-
------------
-function Thread._return(val)
-	if ffi.os == "Windows" and not WINUSEPTHREAD then 
-		return val
-	else
+	ffi.cdef[[int pthread_cancel(pthread_t thread);]]
+	function Thread:Exit(val)
+		return pthread.C.pthread_cancel(self.thread)
+	end
+	function Thread.exit(val)
+		pthread.C.pthread_exit(nil)
+	end
+	
+	function Thread._return(val)
 		local ud = ffi.new("struct { unsigned long x; }",val)
 		return ud
 	end
+	
 end
+
 
 return Thread

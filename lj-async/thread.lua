@@ -247,10 +247,10 @@ else
 				local ret = status[0]
 				ret = ret_unsigned_long and get_unsigned_long(ret) or ret
 				return true, ret
-			elseif ret == ETIMEDOUT then
+			elseif ret_np == pthread.H.ETIMEDOUT then
 				return false
 			else
-				error("error on pthread_mutex_timedlock:"..ret)
+				error("error on pthread_mutex_timedlock:"..tostring(ret_np))
 			end
 		else
 			--gets it as os.time (or pthread.C.time) + timeout

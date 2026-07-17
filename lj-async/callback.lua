@@ -34,7 +34,8 @@ local callback_setup_func = string.dump(function(cbtype, cbsource, ...)
             return ret_fail2
         end
     end)
-    local ptr = tonumber(ffi.cast('uintptr_t', ffi.cast('void *', cb)))
+    local ptrs = require"lj-async.ptr"
+    local ptr = ptrs.addr(cb)
     return cb, ptr
 end)
 

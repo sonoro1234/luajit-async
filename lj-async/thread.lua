@@ -10,6 +10,10 @@ local ffi = require "ffi"
 local CallbackFactory = require "lj-async.callback"
 local C = ffi.C
 
+local ptrs = require"lj-async.ptr"
+local addr = ptrs.addr
+local ptr  = ptrs.ptr
+
 local Thread = {}
 Thread.__index = Thread
 local callback_t
@@ -159,13 +163,6 @@ else
 	
 	local has_pthread_timedjoin_np = pcall(function() return ffi.C.pthread_timedjoin_np end)
 	
-	local function addr(cdata)
-		return tonumber(ffi.cast('uintptr_t', ffi.cast('void*', cdata)))
-	end
-
-	local function ptr(ctype, p)
-		return ffi.cast(ctype, ffi.cast('void*', p))
-	end
 	
 	function Thread.new(func, ud, ...)
 		local self = setmetatable({}, Thread)
@@ -179,9 +176,13 @@ else
 			func = function(cond, mut ,done ,...)
 				local ffi = require"ffi"
 				local pthread = require"pthread"
-				cond = ffi.cast("pthread_cond_t*", ffi.cast('void*', cond))
-				mut = ffi.cast("pthread_mutex_t*", ffi.cast('void*', mut))
-				done = ffi.cast("bool*", ffi.cast('void*', done))
+				local ptrs = require"lj-async.ptr"
+				--cond = ffi.cast("pthread_cond_t*", ffi.cast('void*', cond))
+				cond = ptrs.ptr("pthread_cond_t*", cond)
+				--mut = ffi.cast("pthread_mutex_t*", ffi.cast('void*', mut))
+				mut = ptrs.ptr("pthread_mutex_t*", mut)
+				--done = ffi.cast("bool*", ffi.cast('void*', done))
+				done = ptrs.ptr("bool*", done)
 				WINUSEPTHREAD = is_winpthread
 				local inner_f = oldfunc(...)
 				return function(ud1)

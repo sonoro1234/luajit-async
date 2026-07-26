@@ -47,7 +47,6 @@ local function coop_cancel_wrap(self, func)
 					end
 
 				debug.sethook(hook, "", 100)
-				
 				--------------------------------------
 				local inner_f = oldfunc(...)
 				return function(ud1)
@@ -208,14 +207,17 @@ if ffi.os == "Windows" and not WINUSEPTHREAD then
 	function Thread._return(val)
 		return val
 	end
-	function Thread:Exit(val)
+	
+	function Thread:cancel()
 		if self.coop_cancel then
 			self.done[0] = true
-			--self.cancelled = true
 		else
-			print"call TerminateThread"
-			error_check(C.TerminateThread(self.thread, val or 0))
+			print"cancel without coop_cancel"
 		end
+	end
+	function Thread:kill(val)
+		print"call TerminateThread"
+		error_check(C.TerminateThread(self.thread, val or 0))
 	end
 	function Thread.exit(val)
 		--print("call ExitThread")
@@ -423,7 +425,7 @@ else
        //void pthread_cleanup_push(void (void *) *routine, void *arg);
 	   void pthread_cleanup_push(void (*routine)(void *),void *arg);
        void pthread_cleanup_pop(int execute);   ]]
-	function Thread:Exit(val)
+	function Thread:cancel()
 		-- local cstate = ffi.new("int[1]")
 		-- assert(pthread.C.pthread_setcancelstate( pthread.C.PTHREAD_CANCEL_ENABLE, cstate)==0)
 		-- print("pthread_setcancelstate",pthread.C.PTHREAD_CANCEL_ENABLE, cstate[0])
@@ -451,6 +453,9 @@ else
 			--print("self.thread cancelling", self.thread)
 			--ret = pthread.C.pthread_cancel(self.thread)
 		return ret
+	end
+	function Thread:kill()
+		print"kill dont work with pthreads"
 	end
 	function Thread.exit(val)
 		pthread.C.pthread_exit(nil)

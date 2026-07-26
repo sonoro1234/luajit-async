@@ -171,14 +171,14 @@ end
 
 M.push = push
 M.init_push = function(L)
-	--print("=========================init_push clears lookup_t")
+	--io.write("=========================init_push clears lookup_t\n")
 	for k,v in pairs(lookup_t) do
-		--print("deleting",k,v)
+		--io.write("deleting",tostring(k),tostring(v),"\n")
 		--delete lookup_t from globals
 		C.lua_pushnil(L)
 		C.lua_setfield(L, C.LUA_GLOBALSINDEX, v);
 	end
-	--print("=====================end init_push clears lookup_t")
+	--io.write("=====================end init_push clears lookup_t\n")
 	lookup_t = {} --clear lookup_t
 end
 return M

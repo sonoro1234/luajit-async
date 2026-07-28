@@ -6,17 +6,16 @@ local C = ffi.C
 
 -- Setup function ran by the Lua state to create
 local callback_setup_func = string.dump(function(cbtype, cbsource, ...)
-    --print("in callback_setup_func",cbtype, cbsource,...)
+
     local ffi = _G.require("ffi")
     local initfunc = cbsource 
-    --local initfunc = _G.loadstring(cbsource)
+
     local ret_fail2 = cbtype:match("%s*(.-)%s*%(.-%*.-%)")
     ret_fail2 = (ret_fail2 ~= "void") and ffi.new(ret_fail2) or nil
     local xpcall, dtraceback, tostring, error = _G.xpcall, _G.debug.traceback, _G.tostring, _G.error
     
     local xpcall_hook = function(err) return dtraceback(tostring(err) or "<nonstring error>") end
 
-    --local cbfunc = initfunc(...)
     local ok, cbfunc = xpcall(initfunc, xpcall_hook, ...)
     if not ok then print("initfunc error", cbfunc);error("initfunc") end
     local waserror = false
@@ -82,7 +81,7 @@ local function MakeCallback(L, cb2type, cb2, ... )
     C.lua_call(L,1,1)
     -- Load the actual callback
     C.lua_pushlstring(L, cb2type, #cb2type)
-    --C.lua_pushlstring(L, cb2, #cb2)
+
     push(L,cb2,true)
     local n = moveValues(L, ...)
     local ret = C.lua_pcall(L, 2 + n, 2, 0)
@@ -98,7 +97,6 @@ local function MakeCallback(L, cb2type, cb2, ... )
     C.lua_settop(L, 1)
     local callback = ffi.cast(cb2type, ptr)
     assert(callback ~= nil)
-    --print("MakeCallback cb",callback,ptr)
     return callback
 end
 
@@ -123,13 +121,13 @@ function Callback:__new(callback_func, ...)
     if L == nil then
         error("Could not allocate new state",2)
     end
-    --print("newcallback",L)
+
     obj.L = L
     
     C.luaL_openlibs(L)
 
     obj.callback = MakeCallback(L, cbtype, callback_func, ...)
-    --print("new cb", obj.callback)
+
     return obj
 end
 
@@ -148,11 +146,7 @@ function Callback:growstack()
 end
 --- Frees the callback object and associated callback.
 function Callback:free()
-    --print"Callback:free"
     if self.L ~= nil then
-        -- TODO: Do we need to free the callback, or will lua_close free it for us?
-        --print("Callback:free2",self.L)
-        --print("Cb",self.callback)
         C.lua_close(self.L)
         self.L = nil
     end

@@ -26,36 +26,19 @@ local function coop_cancel_wrap(self, func)
 				local ffi = require"ffi"
 				local ptrs = require"lj-async.ptr"
 				done = ptrs.ptr("bool*", done)
-				------------------------------------
-				--print(self,self.coop_cancel,coop_cancel)
-				-- require"anima.utils"
-				-- prtable(self)
-				---------------------------------------
-				--print"setting testcancel_hook"
 				local function hook(ev, line)
-
 						if done[0] then 
-						
-							print("returning",ev,line);
-							local info = debug.getinfo(2,"Sl")
-							print(string.format("deb %s %d",info.source, info.currentline))
+							-- print("returning",ev,line);
+							-- local info = debug.getinfo(2,"Sl")
+							-- print(string.format("deb %s %d",info.source, info.currentline))
 							debug.sethook()
 							error"cancelled" 
 						end
-						--io.write"."
-						--io.write(ev.."."..tostring(line).." ")
 					end
-
 				debug.sethook(hook, "", 100)
 				--------------------------------------
 				local inner_f = oldfunc(...)
 				return function(ud1)
-					if self.coop_cancel then 
-						print"==================jitoff======================"
-						jit.off(inner_f, true)
-						jit.off(true, true)
-						jit.off()
-					end
 					local ok, ret = pcall(inner_f, ud1)
 					print("--------inner_f ret", ok, ret)
 					if self.coop_cancel then debug.sethook() end
@@ -141,7 +124,6 @@ if ffi.os == "Windows" and not WINUSEPTHREAD then
 			coop_cancel = true
 		end
 		local self = setmetatable({}, Thread)
-		--print("coop_cancel",self,self.coop_cancel,coop_cancel)
 		if coop_cancel then
 			func = coop_cancel_wrap(self, func)
 			self.cb = callback_t(func, addr(self.done), ...)
@@ -189,18 +171,10 @@ if ffi.os == "Windows" and not WINUSEPTHREAD then
 	--- Destroys a thread and the associated callback.
 	-- Be sure to join the thread first!
 	function Thread:free()
-		--print("Thread:free",self.thread)
-		
 		if self.thread ~= nil then
-			--print("Thread:free CloseHandle", self.thread)
 			ffi.gc(self.thread, nil)
 			error_check(C.CloseHandle(self.thread))
 			self.thread = nil
-		end
-		
-		if self.cb ~= nil then
-			--self.cb:free()
-			--self.cb = nil
 		end
 	end
 	
@@ -216,13 +190,10 @@ if ffi.os == "Windows" and not WINUSEPTHREAD then
 		end
 	end
 	function Thread:kill(val)
-		print"call TerminateThread"
 		error_check(C.TerminateThread(self.thread, val or 0))
 	end
 	function Thread.exit(val)
-		--print("call ExitThread")
 		C.ExitThread(val)
-		--print"done"
 	end
 else
 	local pthread = require"pthread"
@@ -248,7 +219,6 @@ else
 		end
 		local self = setmetatable({}, Thread)
 		self.coop_cancel = coop_cancel
-		--print(self,self.coop_cancel,coop_cancel)
 		if not has_pthread_timedjoin_np then
 			self.mutex = pthread.mutex()
 			self.cond = pthread.cond()
@@ -263,15 +233,7 @@ else
 				mut = ptrs.ptr("pthread_mutex_t*", mut)
 				done = ptrs.ptr("bool*", done)
 				WINUSEPTHREAD = is_winpthread
-				
-				---------------------------------------
-				-- print("WINUSEPTHREAD",WINUSEPTHREAD)
-				-- print(self,self.coop_cancel,coop_cancel)
-				-- print("thread",self.thread)
-				-- require"anima.utils"
-				-- prtable(self)
 				if self.coop_cancel then
-					--print"setting pthread_testcancel"
 					local function hook(ev, line)
 						if done[0] then 
 							print("returning",ev,line);
@@ -280,36 +242,19 @@ else
 							debug.sethook()
 							error"cancelled" 
 						end
-						--io.write"."
-						--io.write(ev.."."..tostring(line).." ")
-						--pthread.C.pthread_testcancel()
 					end
-					--debug.sethook(hook, "l", 10)
 					debug.sethook(hook, "", 100)
 				end
-				
 				--------------------------------------
 				local inner_f = oldfunc(...)
 				return function(ud1)
-					if self.coop_cancel then 
-						print("========jitoff============");
-						jit.off(inner_f, true) 
-						jit.off(true, true)
-						jit.off()
-					end
 					local ok, ret = pcall(inner_f, ud1)
-					print("--------inner_f ret", ok, ret)
 					if self.coop_cancel then debug.sethook() end
-					local tr_ret = mut:trylock()
-					print("tr_ret",tr_ret)
-					if tr_ret then
-						--print("trylock true",self.thread)
+					if mut:trylock() then
 						done[0] = true
 						cond:signal()
 						mut:unlock()
-						--print("unlock on thread", self.thread)
 					else
-						--print("could not trylock",self.thread)
 						done[0] = true
 					end
 					if not ok then 
@@ -381,38 +326,26 @@ else
 			end
 		else
 			local tsl = prepare_timeout2(timeout)
-			--print("join lock on thread", self.thread)
 			self.mutex:lock()
 			if not self.done[0] then
-				--print"cond wait"
 				local ret_w = self.cond:wait(self.mutex, tsl) -- tsl.s + tsl.ns*1e-9)
-				--print(string.format("\ncond wait return %s",tostring(ret_w)))
 				self.mutex:unlock()
-				--print("join unlock on thread", self.thread)
 				if not ret_w then 
 					return false -- timeout
 				else
-					--print("pthread.join(self.thread)2222", self.thread, ret)
 					local ret = pthread.join(self.thread)
-					-- local status = ffi.new'void*[1]'
-					-- local ret_pt = pthread.C.pthread_join(self.thread, status)
-					-- print(string.format(" %d", ret_pt))
-					-- local ret = status[0]
 					ret = ret_unsigned_long and get_unsigned_long(ret) or ret
 					return true, ret
 				end
 			else
 				self.mutex:unlock()
-				--print("join unlock2 on thread", self.thread)
 				local ret = pthread.join(self.thread)
-				--print("pthread.join(self.thread)", self.thread, ret)
 				ret = ret_unsigned_long and get_unsigned_long(ret) or ret
 				return true, ret
 			end
 		end
 	end
 	function Thread:free()
-		--print("Thread:free",self.thread)
 		if self.thread ~= nil then
 		ffi.gc(self.thread, nil)
 		end
@@ -422,36 +355,20 @@ else
 	ffi.cdef[[
        int pthread_setcancelstate(int state, int *oldstate);
        int pthread_setcanceltype(int type, int *oldtype);
-       //void pthread_cleanup_push(void (void *) *routine, void *arg);
 	   void pthread_cleanup_push(void (*routine)(void *),void *arg);
        void pthread_cleanup_pop(int execute);   ]]
 	function Thread:cancel()
-		-- local cstate = ffi.new("int[1]")
-		-- assert(pthread.C.pthread_setcancelstate( pthread.C.PTHREAD_CANCEL_ENABLE, cstate)==0)
-		-- print("pthread_setcancelstate",pthread.C.PTHREAD_CANCEL_ENABLE, cstate[0])
-		
-		-- local ctype = ffi.new("int[1]")
-		-- assert(pthread.C.pthread_setcanceltype( pthread.C.PTHREAD_CANCEL_DEFERRED, ctype)==0)
-		-- print("pthread_setcanceltype",pthread.C.PTHREAD_CANCEL_DEFERRED, ctype[0])
 		self.done[0] = true
-		local ret
-		--print("Exit going to lock on thread", self.thread)
 		if self.mutex then
 			if self.mutex:trylock() then
 				self.done[0] = true
 				self.cond:signal()
-				--self.cancelled = true
 				self.mutex:unlock()
-				--print"leaving lock in Exit"
 			else
-				--print"could not trylock in Exit"
 				self.done[0] = true
 			end
 		end
-		--print"done set to true on Exit"
 		if not self.coop_cancel then print"CANCELLATION WONT WORK." end
-			--print("self.thread cancelling", self.thread)
-			--ret = pthread.C.pthread_cancel(self.thread)
 		return ret
 	end
 	function Thread:kill()
@@ -462,7 +379,6 @@ else
 	end
 	
 	function Thread._return(val)
-		print("Thread._return", val)
 		local ud = ffi.new("struct { unsigned long x; }",val)
 		return ud
 	end
